@@ -6,6 +6,7 @@ PostQuadRenderer::PostQuadRenderer(const MString& name, const MString& fxFilePat
 	: MHWRender::MQuadRender(name)
     , shaderInstance(NULL), originalFxFilePath(fxFilePath), fxFilePath(fxFilePath)
     , techniqueName(technique), bloomIntensity(1.5f), glowRadius(1.0f), shouldClear(false)
+    , threshold(0.22f), softKnee(0.6f)
     , inputTargetTexture(NULL), secondaryInputTargetTexture(NULL), outputTargetTexture(NULL)
 {
     outputTargetArray[0] = NULL;
@@ -73,6 +74,8 @@ const MHWRender::MShaderInstance* PostQuadRenderer::shader()
 
         shaderInstance->setParameter("gBloomIntensity", bloomIntensity);
         shaderInstance->setParameter("gGlowRadius", glowRadius);
+        shaderInstance->setParameter("gThreshold", threshold);
+        shaderInstance->setParameter("gSoftKnee", softKnee);
     }
     return shaderInstance;
 }
@@ -163,6 +166,26 @@ void PostQuadRenderer::setGlowRadius(float val)
 float PostQuadRenderer::getGlowRadius() const
 {
     return glowRadius;
+}
+
+void PostQuadRenderer::setThreshold(float val)
+{
+    threshold = val;
+}
+
+float PostQuadRenderer::getThreshold() const
+{
+    return threshold;
+}
+
+void PostQuadRenderer::setSoftKnee(float val)
+{
+    softKnee = val;
+}
+
+float PostQuadRenderer::getSoftKnee() const
+{
+    return softKnee;
 }
 
 

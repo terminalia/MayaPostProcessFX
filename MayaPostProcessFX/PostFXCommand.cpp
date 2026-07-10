@@ -11,6 +11,8 @@ const char* PostFXCommand::cReloadLongFlag = "-reload";
 const char* PostFXCommand::cBloomIntensityLongFlag = "-bloomIntensity";
 const char* PostFXCommand::cGlowRadiusLongFlag = "-glowRadius";
 const char* PostFXCommand::cBloomActiveLongFlag = "-bloom";
+const char* PostFXCommand::cThresholdLongFlag = "-threshold";
+const char* PostFXCommand::cSoftKneeLongFlag = "-softKnee";
 
 PostFXCommand::PostFXCommand()
 { }
@@ -80,6 +82,18 @@ MStatus PostFXCommand::doIt(const MArgList & args)
             return MStatus::kSuccess;
         }
 
+        if (argData.isFlagSet(cThresholdLongFlag))
+        {
+            setResult(firstOp->getThreshold());
+            return MStatus::kSuccess;
+        }
+
+        if (argData.isFlagSet(cSoftKneeLongFlag))
+        {
+            setResult(firstOp->getSoftKnee());
+            return MStatus::kSuccess;
+        }
+
         MGlobal::displayError("Invalid query flag specified.");
         return MStatus::kFailure;
     }
@@ -101,6 +115,7 @@ MStatus PostFXCommand::doIt(const MArgList & args)
         if (!quadOp) 
             continue;
 
+        //BLOOM INTENSITY
         if (argData.isFlagSet(cBloomIntensityLongFlag)) 
         {
             double val;
@@ -109,6 +124,7 @@ MStatus PostFXCommand::doIt(const MArgList & args)
             explicitUpdate = true;
         }
 
+        //GLOW RADIUS
         if (argData.isFlagSet(cGlowRadiusLongFlag)) 
         {
             double val;
@@ -116,7 +132,26 @@ MStatus PostFXCommand::doIt(const MArgList & args)
             quadOp->setGlowRadius((float)val);
             explicitUpdate = true;
         }
+
+        //THRESHOLD
+        if (argData.isFlagSet(cThresholdLongFlag))
+        {
+            double val;
+            argData.getFlagArgument(cThresholdLongFlag, 0, val);
+            quadOp->setThreshold((float)val);
+            explicitUpdate = true;
+        }
+
+        //SOFT KNEEE
+        if (argData.isFlagSet(cSoftKneeLongFlag))
+        {
+            double val;
+            argData.getFlagArgument(cSoftKneeLongFlag, 0, val);
+            quadOp->setSoftKnee((float)val);
+            explicitUpdate = true;
+        }
         
+        //BLOOM ACTIVE
         if (argData.isFlagSet(cBloomActiveLongFlag)) 
         {
             int state = 1; 
@@ -153,6 +188,8 @@ MSyntax PostFXCommand::newSyntax()
     syntax.addFlag("", cBloomIntensityLongFlag, MSyntax::kDouble);
     syntax.addFlag("", cGlowRadiusLongFlag, MSyntax::kDouble);
     syntax.addFlag("", cBloomActiveLongFlag, MSyntax::kLong);
+    syntax.addFlag("", cThresholdLongFlag, MSyntax::kDouble);
+    syntax.addFlag("", cSoftKneeLongFlag, MSyntax::kDouble);
 
     return syntax;
 }

@@ -27,8 +27,15 @@ public:
 
     void setBloomIntensity(float val);
     float getBloomIntensity() const;
+
     void setGlowRadius(float val);
     float getGlowRadius() const;
+
+    void setThreshold(float val);
+    float getThreshold() const;
+
+    void setSoftKnee(float val);
+    float getSoftKnee() const;
 
 protected:
     MHWRender::MShaderInstance* shaderInstance;
@@ -38,6 +45,9 @@ protected:
 
     float bloomIntensity;
     float glowRadius;
+    float threshold;
+    float softKnee;
+
     bool shouldClear;
 
     //Stores the memory address of the primary input texture (render target) that the current shader pass needs to read from and process

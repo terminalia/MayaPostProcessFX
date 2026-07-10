@@ -16,5 +16,7 @@ private:
 	static const char* cBloomIntensityLongFlag;
 	static const char* cGlowRadiusLongFlag;
 	static const char* cBloomActiveLongFlag;
+	static const char* cThresholdLongFlag;
+	static const char* cSoftKneeLongFlag;
 };
 
