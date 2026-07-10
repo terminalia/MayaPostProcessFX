@@ -1,14 +1,9 @@
 #pragma once
-#include <maya/MViewport2Renderer.h>
+#include <maya/MViewport2Renderer.h> //  Maya 2026 Unified Viewport 2.0 Architecture header
+#include <maya/MString.h>
+#include <maya/MRenderTarget.h>
 #include <vector>
 
-/*
-* The PostFXRenderOverride class is the central manager and pipeline builder for your custom viewport post-processing effect. 
-* It inherits from MHWRender::MRenderOverride, which is Maya's Viewport 2.0 API used to completely hijack or enhance the viewport rendering loop.
-* 
-* Instead of letting Maya draw the 3D scene and push it straight to your screen, this class orchestrates a multi-pass image processing chain (specifically 
-* a bloom pyramid—by) creating intermediate textures, setting up shaders, and chaining a series of full-screen quad rendering steps together.
-*/
 class PostQuadRenderer;
 
 class PostFXRenderOverride : public MHWRender::MRenderOverride
@@ -27,16 +22,20 @@ public:
 
     std::vector<MHWRender::MRenderOperation*> renderOperations;
 
-    //PostQuadRenderer render pass unique names
+    // PostQuadRenderer render pass unique names
     static const MString cDownsample1PassName;
     static const MString cDownsample2PassName;
     static const MString cDownsample3PassName;
-    static const MString cDownsample4PassName; 
-    static const MString cDownsample5PassName; 
+    static const MString cDownsample4PassName;
+    static const MString cDownsample5PassName;
+    static const MString cDownsample6PassName; // 1/64
+    static const MString cDownsample7PassName; // 1/128
     static const MString cUpsample1PassName;
     static const MString cUpsample2PassName;
-    static const MString cUpsample3PassName;   
-    static const MString cUpsample4PassName;   
+    static const MString cUpsample3PassName;
+    static const MString cUpsample4PassName;
+    static const MString cUpsample5PassName;
+    static const MString cUpsample6PassName;
     static const MString cFinalCompositePassName;
 
 private:
@@ -50,14 +49,16 @@ private:
     MHWRender::MRenderTarget* targetHalf;
     MHWRender::MRenderTarget* targetQuarter;
     MHWRender::MRenderTarget* targetEighth;
-    MHWRender::MRenderTarget* targetSixteenth;     
-    MHWRender::MRenderTarget* targetThirtySecond;  
+    MHWRender::MRenderTarget* targetSixteenth;
+    MHWRender::MRenderTarget* targetThirtySecond;
+    MHWRender::MRenderTarget* targetSixtyFourth;       // Native 1/64th texture target
+    MHWRender::MRenderTarget* targetOneTwentyEighth;   // Native 1/128th texture target
 
-    //UP SAMPLING PHASE
-    //These copy the dimensions of your previous pyramid levels. They serve as the destination containers for your upsampling passes, blending the super-blurry 
-    //small layers back into the sharper large layers before your FinalComposite pass merges them onto the screen.
-    MHWRender::MRenderTarget* targetSixteenthBlur; 
-    MHWRender::MRenderTarget* targetEighthBlur; 
+    // UP SAMPLING PHASE
+    MHWRender::MRenderTarget* targetSixtyFourthBlur;
+    MHWRender::MRenderTarget* targetThirtySecondBlur;
+    MHWRender::MRenderTarget* targetSixteenthBlur;
+    MHWRender::MRenderTarget* targetEighthBlur;
     MHWRender::MRenderTarget* targetQuarterBlur;
     MHWRender::MRenderTarget* targetHalfBlur;
 };
