@@ -21,6 +21,7 @@ attribute ps_output {
     vec4 fragColor : COLOR0;
 };
 
+// --- SHARED VERTEX SHADER ---
 GLSLShader VS_Main
 {
     void main()
@@ -30,6 +31,7 @@ GLSLShader VS_Main
     }
 }
 
+// --- PASS 1: EXPONENTIAL SMOOTH-KNEE HIGHLIGHT ISOLATION ---
 GLSLShader PS_ThresholdDownsample
 {
     vec3 ExtractBrightHQ(vec3 color, float threshold, float softKnee)
@@ -61,6 +63,7 @@ GLSLShader PS_ThresholdDownsample
     }
 }
 
+// --- PASS 2: CRISP DOWNSAMPLE ---
 GLSLShader PS_StandardDownsample
 {
     void main()
@@ -80,6 +83,7 @@ GLSLShader PS_StandardDownsample
     }
 }
 
+// --- PASS 3A: DEEP LAYER UPSAMPLE (CIRCULAR BLENDER RANGE) ---
 GLSLShader PS_UpsampleWide
 {
     void main()
@@ -87,29 +91,34 @@ GLSLShader PS_UpsampleWide
         ivec2 texSize = textureSize(gLinearSampler, 0);
         vec2 texelSize = vec2(1.0 / float(texSize.x), 1.0 / float(texSize.y));
         
-        // Locked tightly at 1.5. No artifacts possible.
-        // Deep 1/128 and 1/64 levels natively span massive screen space coordinates.
-        vec2 d = texelSize * 1.5;
+        float radiusScale = 1.35;
+        vec2 dAxial = texelSize * radiusScale;
+        // FIX: Scale the diagonal vectors down by 1/sqrt(2) to form a true radius circle
+        vec2 dDiag = texelSize * (radiusScale * 0.707106);
         
         vec3 upsampledGlow = texture(gLinearSampler, outUV).rgb * 4.0;
-        upsampledGlow += texture(gLinearSampler, outUV + vec2(-d.x, -d.y)).rgb * 2.0;
-        upsampledGlow += texture(gLinearSampler, outUV + vec2( d.x, -d.y)).rgb * 2.0;
-        upsampledGlow += texture(gLinearSampler, outUV + vec2(-d.x,  d.y)).rgb * 2.0;
-        upsampledGlow += texture(gLinearSampler, outUV + vec2( d.x,  d.y)).rgb * 2.0;
-        upsampledGlow += texture(gLinearSampler, outUV + vec2(0.0, -d.y)).rgb;
-        upsampledGlow += texture(gLinearSampler, outUV + vec2(0.0,  d.y)).rgb;
-        upsampledGlow += texture(gLinearSampler, outUV + vec2(-d.x, 0.0)).rgb;
-        upsampledGlow += texture(gLinearSampler, outUV + vec2( d.x, 0.0)).rgb;
+        
+        // Circular Diagonal Taps
+        upsampledGlow += texture(gLinearSampler, outUV + vec2(-dDiag.x, -dDiag.y)).rgb * 2.0;
+        upsampledGlow += texture(gLinearSampler, outUV + vec2( dDiag.x, -dDiag.y)).rgb * 2.0;
+        upsampledGlow += texture(gLinearSampler, outUV + vec2(-dDiag.x,  dDiag.y)).rgb * 2.0;
+        upsampledGlow += texture(gLinearSampler, outUV + vec2( dDiag.x,  dDiag.y)).rgb * 2.0;
+        
+        // Circular Axial Taps
+        upsampledGlow += texture(gLinearSampler, outUV + vec2(0.0, -dAxial.y)).rgb;
+        upsampledGlow += texture(gLinearSampler, outUV + vec2(0.0,  dAxial.y)).rgb;
+        upsampledGlow += texture(gLinearSampler, outUV + vec2(-dAxial.x, 0.0)).rgb;
+        upsampledGlow += texture(gLinearSampler, outUV + vec2( dAxial.x, 0.0)).rgb;
         upsampledGlow /= 16.0;
         
         vec3 higherResLayer = texture(gSourceMipSampler, outUV).rgb;
         
-        // Exponential weighting curve based on slider radius
         float weight = clamp(gGlowRadius / 30.0, 0.4, 0.9);
         fragColor = vec4(mix(higherResLayer, upsampledGlow, weight), 1.0);
     }
 }
 
+// --- PASS 3B: MID LAYER UPSAMPLE ---
 GLSLShader PS_UpsampleMedium
 {
     void main()
@@ -117,17 +126,20 @@ GLSLShader PS_UpsampleMedium
         ivec2 texSize = textureSize(gLinearSampler, 0);
         vec2 texelSize = vec2(1.0 / float(texSize.x), 1.0 / float(texSize.y));
         
-        vec2 d = texelSize * 1.2;
+        float radiusScale = 1.15;
+        vec2 dAxial = texelSize * radiusScale;
+        vec2 dDiag = texelSize * (radiusScale * 0.707106);
         
         vec3 upsampledGlow = texture(gLinearSampler, outUV).rgb * 4.0;
-        upsampledGlow += texture(gLinearSampler, outUV + vec2(-d.x, -d.y)).rgb * 2.0;
-        upsampledGlow += texture(gLinearSampler, outUV + vec2( d.x, -d.y)).rgb * 2.0;
-        upsampledGlow += texture(gLinearSampler, outUV + vec2(-d.x,  d.y)).rgb * 2.0;
-        upsampledGlow += texture(gLinearSampler, outUV + vec2( d.x,  d.y)).rgb * 2.0;
-        upsampledGlow += texture(gLinearSampler, outUV + vec2(0.0, -d.y)).rgb;
-        upsampledGlow += texture(gLinearSampler, outUV + vec2(0.0,  d.y)).rgb;
-        upsampledGlow += texture(gLinearSampler, outUV + vec2(-d.x, 0.0)).rgb;
-        upsampledGlow += texture(gLinearSampler, outUV + vec2( d.x, 0.0)).rgb;
+        upsampledGlow += texture(gLinearSampler, outUV + vec2(-dDiag.x, -dDiag.y)).rgb * 2.0;
+        upsampledGlow += texture(gLinearSampler, outUV + vec2( dDiag.x, -dDiag.y)).rgb * 2.0;
+        upsampledGlow += texture(gLinearSampler, outUV + vec2(-dDiag.x,  dDiag.y)).rgb * 2.0;
+        upsampledGlow += texture(gLinearSampler, outUV + vec2( dDiag.x,  dDiag.y)).rgb * 2.0;
+        
+        upsampledGlow += texture(gLinearSampler, outUV + vec2(0.0, -dAxial.y)).rgb;
+        upsampledGlow += texture(gLinearSampler, outUV + vec2(0.0,  dAxial.y)).rgb;
+        upsampledGlow += texture(gLinearSampler, outUV + vec2(-dAxial.x, 0.0)).rgb;
+        upsampledGlow += texture(gLinearSampler, outUV + vec2( dAxial.x, 0.0)).rgb;
         upsampledGlow /= 16.0;
         
         vec3 higherResLayer = texture(gSourceMipSampler, outUV).rgb;
@@ -137,6 +149,7 @@ GLSLShader PS_UpsampleMedium
     }
 }
 
+// --- PASS 3C: HIGH LAYER UPSAMPLE ---
 GLSLShader PS_UpsampleTight
 {
     void main()
@@ -144,17 +157,20 @@ GLSLShader PS_UpsampleTight
         ivec2 texSize = textureSize(gLinearSampler, 0);
         vec2 texelSize = vec2(1.0 / float(texSize.x), 1.0 / float(texSize.y));
         
-        vec2 d = texelSize * 1.0;
+        float radiusScale = 1.0;
+        vec2 dAxial = texelSize * radiusScale;
+        vec2 dDiag = texelSize * (radiusScale * 0.707106);
         
         vec3 upsampledGlow = texture(gLinearSampler, outUV).rgb * 4.0;
-        upsampledGlow += texture(gLinearSampler, outUV + vec2(-d.x, -d.y)).rgb * 2.0;
-        upsampledGlow += texture(gLinearSampler, outUV + vec2( d.x, -d.y)).rgb * 2.0;
-        upsampledGlow += texture(gLinearSampler, outUV + vec2(-d.x,  d.y)).rgb * 2.0;
-        upsampledGlow += texture(gLinearSampler, outUV + vec2( d.x,  d.y)).rgb * 2.0;
-        upsampledGlow += texture(gLinearSampler, outUV + vec2(0.0, -d.y)).rgb;
-        upsampledGlow += texture(gLinearSampler, outUV + vec2(0.0,  d.y)).rgb;
-        upsampledGlow += texture(gLinearSampler, outUV + vec2(-d.x, 0.0)).rgb;
-        upsampledGlow += texture(gLinearSampler, outUV + vec2( d.x, 0.0)).rgb;
+        upsampledGlow += texture(gLinearSampler, outUV + vec2(-dDiag.x, -dDiag.y)).rgb * 2.0;
+        upsampledGlow += texture(gLinearSampler, outUV + vec2( dDiag.x, -dDiag.y)).rgb * 2.0;
+        upsampledGlow += texture(gLinearSampler, outUV + vec2(-dDiag.x,  dDiag.y)).rgb * 2.0;
+        upsampledGlow += texture(gLinearSampler, outUV + vec2( dDiag.x,  dDiag.y)).rgb * 2.0;
+        
+        upsampledGlow += texture(gLinearSampler, outUV + vec2(0.0, -dAxial.y)).rgb;
+        upsampledGlow += texture(gLinearSampler, outUV + vec2(0.0,  dAxial.y)).rgb;
+        upsampledGlow += texture(gLinearSampler, outUV + vec2(-dAxial.x, 0.0)).rgb;
+        upsampledGlow += texture(gLinearSampler, outUV + vec2( dAxial.x, 0.0)).rgb;
         upsampledGlow /= 16.0;
         
         vec3 higherResLayer = texture(gSourceMipSampler, outUV).rgb;
@@ -164,6 +180,7 @@ GLSLShader PS_UpsampleTight
     }
 }
 
+// --- PASS 4: SCENE COMPOSITE OVERLAY ---
 GLSLShader PS_FinalComposite
 {
     void main()
@@ -177,6 +194,7 @@ GLSLShader PS_FinalComposite
     }
 }
 
+// --- TECHNIQUES ---
 technique ThresholdDownsample
 {
     pass p0 {
