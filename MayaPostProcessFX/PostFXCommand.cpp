@@ -122,10 +122,13 @@ MStatus PostFXCommand::doIt(const MArgList & args)
             int state = 1; 
             argData.getFlagArgument(cBloomActiveLongFlag, 0, state);
 
-            if (quadOp->name() != PostFXRenderOverride::cFinalCompositePassName) 
+            /*if (quadOp->name() != PostFXRenderOverride::cFinalCompositePassName) 
             {
                 quadOp->setEnabled(state != 0);
-            }
+            }*/
+
+            quadOp->setEnabled(state != 0);
+
             explicitUpdate = true;
         }
     }

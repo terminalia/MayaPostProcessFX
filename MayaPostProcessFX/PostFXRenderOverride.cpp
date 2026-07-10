@@ -18,7 +18,7 @@ const MString PostFXRenderOverride::cFinalCompositePassName = "PostFXRenderOverr
 */
 PostFXRenderOverride::PostFXRenderOverride(const MString& name)
     : MRenderOverride(name)
-    , UIName("MultiPass Bloom Effects")
+    , UIName("MistworkPostFX")
     , sceneRenderOp(NULL), targetFullScene(NULL)
     , targetHalf(NULL), targetQuarter(NULL), targetEighth(NULL), targetQuarterBlur(NULL), targetHalfBlur(NULL)
 {
