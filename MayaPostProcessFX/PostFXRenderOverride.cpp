@@ -8,8 +8,12 @@
 const MString PostFXRenderOverride::cDownsample1PassName = "PostFXRenderOverride_Down1";
 const MString PostFXRenderOverride::cDownsample2PassName = "PostFXRenderOverride_Down2";
 const MString PostFXRenderOverride::cDownsample3PassName = "PostFXRenderOverride_Down3";
+const MString PostFXRenderOverride::cDownsample4PassName = "PostFXRenderOverride_Down4";
+const MString PostFXRenderOverride::cDownsample5PassName = "PostFXRenderOverride_Down5";
 const MString PostFXRenderOverride::cUpsample1PassName = "PostFXRenderOverride_Up1";
 const MString PostFXRenderOverride::cUpsample2PassName = "PostFXRenderOverride_Up2";
+const MString PostFXRenderOverride::cUpsample3PassName = "PostFXRenderOverride_Up3";
+const MString PostFXRenderOverride::cUpsample4PassName = "PostFXRenderOverride_Up4";
 const MString PostFXRenderOverride::cFinalCompositePassName = "PostFXRenderOverride_FinalComposite";
 
 
@@ -18,9 +22,11 @@ const MString PostFXRenderOverride::cFinalCompositePassName = "PostFXRenderOverr
 */
 PostFXRenderOverride::PostFXRenderOverride(const MString& name)
     : MRenderOverride(name)
-    , UIName("MistworkPostFX")
+    , UIName("MultiPass Bloom Effects")
     , sceneRenderOp(NULL), targetFullScene(NULL)
-    , targetHalf(NULL), targetQuarter(NULL), targetEighth(NULL), targetQuarterBlur(NULL), targetHalfBlur(NULL)
+    , targetHalf(NULL), targetQuarter(NULL), targetEighth(NULL)
+    , targetSixteenth(NULL), targetThirtySecond(NULL)
+    , targetSixteenthBlur(NULL), targetEighthBlur(NULL), targetQuarterBlur(NULL), targetHalfBlur(NULL)
 {
     MHWRender::MRenderer* theRenderer = MHWRender::MRenderer::theRenderer();
 
@@ -60,22 +66,46 @@ PostFXRenderOverride::PostFXRenderOverride(const MString& name)
     renderOperations.push_back(downSample3);
     mOperations.insertAfter(cDownsample2PassName, downSample3);
 
-    //Upsample1: Blends and blurs the 1/8th resolution texture back up into a 1/4th resolution target.
-    PostQuadRenderer* upSample1 = new PostQuadRenderer(cUpsample1PassName, shaderPath, "UpsampleBlend");
+    //Downsample4: Shrinks the highlights down to sixteenth resolution (1/16).
+    PostQuadRenderer* downSample4 = new PostQuadRenderer(cDownsample4PassName, shaderPath, "StandardDownsample");
+    downSample4->setClearOverride(true);
+    renderOperations.push_back(downSample4);
+    mOperations.insertAfter(cDownsample3PassName, downSample4);
+
+    //Downsample5: Shrinks the highlights down to thirty-second resolution (1/32).
+    PostQuadRenderer* downSample5 = new PostQuadRenderer(cDownsample5PassName, shaderPath, "StandardDownsample");
+    downSample5->setClearOverride(true);
+    renderOperations.push_back(downSample5);
+    mOperations.insertAfter(cDownsample4PassName, downSample5);
+
+    //Upsample1: Blends and blurs the 1/32nd resolution texture back up into a 1/16th resolution target.
+    PostQuadRenderer* upSample1 = new PostQuadRenderer(cUpsample1PassName, shaderPath, "UpsampleWide");
     upSample1->setClearOverride(true);
     renderOperations.push_back(upSample1);
-    mOperations.insertAfter(cDownsample3PassName, upSample1);
+    mOperations.insertAfter(cDownsample5PassName, upSample1);
 
-    //Upsample2: Blends and blurs the 1/4th resolution texture back up into a 1/2th resolution target.
-    PostQuadRenderer* upSample2 = new PostQuadRenderer(cUpsample2PassName, shaderPath, "UpsampleBlend");
+    //Upsample2: Blends and blurs the 1/16th resolution texture back up into a 1/8th resolution target.
+    PostQuadRenderer* upSample2 = new PostQuadRenderer(cUpsample2PassName, shaderPath, "UpsampleWide");
     upSample2->setClearOverride(true);
     renderOperations.push_back(upSample2);
     mOperations.insertAfter(cUpsample1PassName, upSample2);
 
+    //Upsample3: Blends and blurs the 1/8th resolution texture back up into a 1/4th resolution target.
+    PostQuadRenderer* upSample3 = new PostQuadRenderer(cUpsample3PassName, shaderPath, "UpsampleMedium");
+    upSample3->setClearOverride(true);
+    renderOperations.push_back(upSample3);
+    mOperations.insertAfter(cUpsample2PassName, upSample3);
+
+    //Upsample4: Blends and blurs the 1/4th resolution texture back up into a 1/2th resolution target.
+    PostQuadRenderer* upSample4 = new PostQuadRenderer(cUpsample4PassName, shaderPath, "UpsampleTight");
+    upSample4->setClearOverride(true);
+    renderOperations.push_back(upSample4);
+    mOperations.insertAfter(cUpsample3PassName, upSample4);
+
     //FinalComposite: Adds the completely accumulated, smooth bloom blur back on top of your original full-resolution scene.
     PostQuadRenderer* finalComposite = new PostQuadRenderer(cFinalCompositePassName, shaderPath, "FinalComposite");
     renderOperations.push_back(finalComposite);
-    mOperations.insertAfter(cUpsample2PassName, finalComposite);
+    mOperations.insertAfter(cUpsample4PassName, finalComposite);
 }
 
 PostFXRenderOverride::~PostFXRenderOverride()
@@ -152,9 +182,31 @@ MStatus PostFXRenderOverride::setup(const MString& destination)
     targetDescriptor.setHeight(h / 8);
     targetEighth = targetMgr->acquireRenderTarget(targetDescriptor);
 
+    //Sixteenth Resolution (1/16): Pushes the downsampling chain deeper to expand maximum visual bleed coverage.
+    targetDescriptor.setName("_bloom_sixteenth");
+    targetDescriptor.setWidth(w / 16);
+    targetDescriptor.setHeight(h / 16);
+    targetSixteenth = targetMgr->acquireRenderTarget(targetDescriptor);
+
+    //Thirty-Second Resolution (1/32): The deepest level of the pyramid to swallow enormous screen coordinates safely.
+    targetDescriptor.setName("_bloom_thirtysecond");
+    targetDescriptor.setWidth(w / 32);
+    targetDescriptor.setHeight(h / 32);
+    targetThirtySecond = targetMgr->acquireRenderTarget(targetDescriptor);
+
     //UP SAMPLING PHASE
     //These copy the dimensions of your previous pyramid levels. They serve as the destination containers for your upsampling passes, blending the super-blurry 
     //small layers back into the sharper large layers before your FinalComposite pass merges them onto the screen.
+    targetDescriptor.setName("_bloom_sixteenth_blur");
+    targetDescriptor.setWidth(w / 16);
+    targetDescriptor.setHeight(h / 16);
+    targetSixteenthBlur = targetMgr->acquireRenderTarget(targetDescriptor);
+
+    targetDescriptor.setName("_bloom_eighth_blur");
+    targetDescriptor.setWidth(w / 8);
+    targetDescriptor.setHeight(h / 8);
+    targetEighthBlur = targetMgr->acquireRenderTarget(targetDescriptor);
+
     targetDescriptor.setName("_bloom_quarter_blur");
     targetDescriptor.setWidth(w / 4);
     targetDescriptor.setHeight(h / 4);
@@ -194,27 +246,55 @@ MStatus PostFXRenderOverride::setup(const MString& destination)
     downSamplePass3->setInputTargetTexture(targetQuarter);
     downSamplePass3->setOutputTargetTexture(targetEighth);
 
+    //PASS 4
+    // Connect 1/8th resolution texture down into the 1/16th resolution texture buffer.
+    PostQuadRenderer* downSamplePass4 = (PostQuadRenderer*)renderOperations[3];
+    downSamplePass4->setInputTargetTexture(targetEighth);
+    downSamplePass4->setOutputTargetTexture(targetSixteenth);
+
+    //PASS 5
+    // Connect 1/16th resolution texture down into the 1/32nd resolution texture buffer.
+    PostQuadRenderer* downSamplePass5 = (PostQuadRenderer*)renderOperations[4];
+    downSamplePass5->setInputTargetTexture(targetSixteenth);
+    downSamplePass5->setOutputTargetTexture(targetThirtySecond);
+
     //UP SAMPLING CHAIN
     //Instead of stretching a tiny 1/8th resolution texture back to full screen—which would look muddy and blocky—the upsampling stages progressively 
     //upscale the blur while injecting sharper structural data cached from the downsampling phase.
     //The up sampling chain runs in reverse order, it means it takes the last output texture (targetEight), combines with the previous (targetQuarter) 
     //to get an upscaled texture
 
-    //PASS 4
-    PostQuadRenderer* upSamplePass1 = (PostQuadRenderer*)renderOperations[3];
-    upSamplePass1->setInputTargetTexture(targetEighth);
-    upSamplePass1->setSecondaryInputTargetTexture(targetQuarter);
-    upSamplePass1->setOutputTargetTexture(targetQuarterBlur);
+    //PASS 6 (Upsample Pass 1)
+    // Input = 1/32nd texture, Secondary Reference = 1/16th texture -> Writes to 1/16th Blur Target.
+    PostQuadRenderer* upSamplePass1 = (PostQuadRenderer*)renderOperations[5];
+    upSamplePass1->setInputTargetTexture(targetThirtySecond);
+    upSamplePass1->setSecondaryInputTargetTexture(targetSixteenth);
+    upSamplePass1->setOutputTargetTexture(targetSixteenthBlur);
 
-    //PASS 5
-    PostQuadRenderer* upSamplePass2 = (PostQuadRenderer*)renderOperations[4];
-    upSamplePass2->setInputTargetTexture(targetQuarterBlur);
-    upSamplePass2->setSecondaryInputTargetTexture(targetHalf);
-    upSamplePass2->setOutputTargetTexture(targetHalfBlur);
+    //PASS 7 (Upsample Pass 2)
+    // Input = 1/16th Blur, Secondary Reference = 1/8th texture -> Writes to 1/8th Blur Target.
+    PostQuadRenderer* upSamplePass2 = (PostQuadRenderer*)renderOperations[6];
+    upSamplePass2->setInputTargetTexture(targetSixteenthBlur);
+    upSamplePass2->setSecondaryInputTargetTexture(targetEighth);
+    upSamplePass2->setOutputTargetTexture(targetEighthBlur);
+
+    // PASS 8 (Upsample Pass 3)
+    // Input = 1/8th Blur, Secondary Reference = 1/4th texture -> Writes to 1/4th Blur Target.
+    PostQuadRenderer* upSamplePass3 = (PostQuadRenderer*)renderOperations[7];
+    upSamplePass3->setInputTargetTexture(targetEighthBlur);
+    upSamplePass3->setSecondaryInputTargetTexture(targetQuarter);
+    upSamplePass3->setOutputTargetTexture(targetQuarterBlur);
+
+    // PASS 9 (Upsample Pass 4)
+    // Input = 1/4th Blur, Secondary Reference = 1/2th texture -> Writes to 1/2th Blur Target.
+    PostQuadRenderer* upSamplePass4 = (PostQuadRenderer*)renderOperations[8];
+    upSamplePass4->setInputTargetTexture(targetQuarterBlur);
+    upSamplePass4->setSecondaryInputTargetTexture(targetHalf);
+    upSamplePass4->setOutputTargetTexture(targetHalfBlur);
 
     //FINAL COMPOSITE
     //Its primary job is to take the fully accumulated, up-sampled output texture(targetHalfBlur) and blend it cleanly back on top of your original, razor-sharp 3D viewport scene
-    PostQuadRenderer* comp = (PostQuadRenderer*)renderOperations[5];
+    PostQuadRenderer* comp = (PostQuadRenderer*)renderOperations[9];
     comp->setInputTargetTexture(targetHalfBlur);
     comp->setSecondaryInputTargetTexture(NULL);
 
@@ -303,6 +383,30 @@ void PostFXRenderOverride::releaseTargets()
     {
         targetMgr->releaseRenderTarget(targetEighth);
         targetEighth = NULL;
+    }
+
+    if (targetSixteenth)
+    {
+        targetMgr->releaseRenderTarget(targetSixteenth);
+        targetSixteenth = NULL;
+    }
+
+    if (targetThirtySecond)
+    {
+        targetMgr->releaseRenderTarget(targetThirtySecond);
+        targetThirtySecond = NULL;
+    }
+
+    if (targetSixteenthBlur)
+    {
+        targetMgr->releaseRenderTarget(targetSixteenthBlur);
+        targetSixteenthBlur = NULL;
+    }
+
+    if (targetEighthBlur)
+    {
+        targetMgr->releaseRenderTarget(targetEighthBlur);
+        targetEighthBlur = NULL;
     }
 
     if (targetQuarterBlur)
