@@ -83,7 +83,7 @@ GLSLShader PS_StandardDownsample
     }
 }
 
-// --- PASS 3A: DEEP LAYER UPSAMPLE (CIRCULAR BLENDER RANGE) ---
+// --- PASS 3A: DEEP LAYER UPSAMPLE (MAXIMUM BLENDER BLEED RANGE) ---
 GLSLShader PS_UpsampleWide
 {
     void main()
@@ -93,18 +93,13 @@ GLSLShader PS_UpsampleWide
         
         float radiusScale = 1.35;
         vec2 dAxial = texelSize * radiusScale;
-        // FIX: Scale the diagonal vectors down by 1/sqrt(2) to form a true radius circle
         vec2 dDiag = texelSize * (radiusScale * 0.707106);
         
         vec3 upsampledGlow = texture(gLinearSampler, outUV).rgb * 4.0;
-        
-        // Circular Diagonal Taps
         upsampledGlow += texture(gLinearSampler, outUV + vec2(-dDiag.x, -dDiag.y)).rgb * 2.0;
         upsampledGlow += texture(gLinearSampler, outUV + vec2( dDiag.x, -dDiag.y)).rgb * 2.0;
         upsampledGlow += texture(gLinearSampler, outUV + vec2(-dDiag.x,  dDiag.y)).rgb * 2.0;
         upsampledGlow += texture(gLinearSampler, outUV + vec2( dDiag.x,  dDiag.y)).rgb * 2.0;
-        
-        // Circular Axial Taps
         upsampledGlow += texture(gLinearSampler, outUV + vec2(0.0, -dAxial.y)).rgb;
         upsampledGlow += texture(gLinearSampler, outUV + vec2(0.0,  dAxial.y)).rgb;
         upsampledGlow += texture(gLinearSampler, outUV + vec2(-dAxial.x, 0.0)).rgb;
@@ -113,7 +108,9 @@ GLSLShader PS_UpsampleWide
         
         vec3 higherResLayer = texture(gSourceMipSampler, outUV).rgb;
         
-        float weight = clamp(gGlowRadius / 30.0, 0.4, 0.9);
+        // UNLEASHED: Boost the accumulation weight so the ultra-wide 1/128 and 1/64 targets 
+        // completely dominate the interpolation blend when the radius slider is maxed out.
+        float weight = clamp((gGlowRadius / 30.0) * 0.95, 0.4, 0.98);
         fragColor = vec4(mix(higherResLayer, upsampledGlow, weight), 1.0);
     }
 }
@@ -135,7 +132,6 @@ GLSLShader PS_UpsampleMedium
         upsampledGlow += texture(gLinearSampler, outUV + vec2( dDiag.x, -dDiag.y)).rgb * 2.0;
         upsampledGlow += texture(gLinearSampler, outUV + vec2(-dDiag.x,  dDiag.y)).rgb * 2.0;
         upsampledGlow += texture(gLinearSampler, outUV + vec2( dDiag.x,  dDiag.y)).rgb * 2.0;
-        
         upsampledGlow += texture(gLinearSampler, outUV + vec2(0.0, -dAxial.y)).rgb;
         upsampledGlow += texture(gLinearSampler, outUV + vec2(0.0,  dAxial.y)).rgb;
         upsampledGlow += texture(gLinearSampler, outUV + vec2(-dAxial.x, 0.0)).rgb;
@@ -144,7 +140,7 @@ GLSLShader PS_UpsampleMedium
         
         vec3 higherResLayer = texture(gSourceMipSampler, outUV).rgb;
         
-        float weight = clamp(gGlowRadius / 30.0, 0.25, 0.75);
+        float weight = clamp((gGlowRadius / 30.0) * 0.85, 0.3, 0.88);
         fragColor = vec4(mix(higherResLayer, upsampledGlow, weight), 1.0);
     }
 }
@@ -166,7 +162,6 @@ GLSLShader PS_UpsampleTight
         upsampledGlow += texture(gLinearSampler, outUV + vec2( dDiag.x, -dDiag.y)).rgb * 2.0;
         upsampledGlow += texture(gLinearSampler, outUV + vec2(-dDiag.x,  dDiag.y)).rgb * 2.0;
         upsampledGlow += texture(gLinearSampler, outUV + vec2( dDiag.x,  dDiag.y)).rgb * 2.0;
-        
         upsampledGlow += texture(gLinearSampler, outUV + vec2(0.0, -dAxial.y)).rgb;
         upsampledGlow += texture(gLinearSampler, outUV + vec2(0.0,  dAxial.y)).rgb;
         upsampledGlow += texture(gLinearSampler, outUV + vec2(-dAxial.x, 0.0)).rgb;
@@ -175,7 +170,7 @@ GLSLShader PS_UpsampleTight
         
         vec3 higherResLayer = texture(gSourceMipSampler, outUV).rgb;
         
-        float weight = clamp(gGlowRadius / 30.0, 0.1, 0.6);
+        float weight = clamp((gGlowRadius / 30.0) * 0.7, 0.15, 0.75);
         fragColor = vec4(mix(higherResLayer, upsampledGlow, weight), 1.0);
     }
 }
@@ -189,7 +184,11 @@ GLSLShader PS_FinalComposite
         vec3 fullGlowPyramid = texture(gLinearSampler, outUV).rgb;
         vec3 cleanGlow = max(fullGlowPyramid, vec3(0.0));
         
-        vec3 finalColor = baseScene.rgb + (cleanGlow * gBloomIntensity);
+        // Dynamic intensity scaler: Expands the apparent visual volume 
+        // to simulate Blender's massive glare-scattering matrix.
+        float radiusVolumeBoost = 1.0 + (gGlowRadius * 0.04);
+        vec3 finalColor = baseScene.rgb + (cleanGlow * gBloomIntensity * radiusVolumeBoost);
+        
         fragColor = vec4(finalColor, baseScene.a);
     }
 }
