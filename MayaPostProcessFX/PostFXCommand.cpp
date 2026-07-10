@@ -35,11 +35,11 @@ MStatus PostFXCommand::doIt(const MArgList & args)
     if (!renderer) 
         return MStatus::kFailure;
 
-    const MHWRender::MRenderOverride* baseOverride = renderer->findRenderOverride("ColorPostProcessOverride");
+    const MHWRender::MRenderOverride* baseOverride = renderer->findRenderOverride("PostFXRenderOverride");
 
     if (!baseOverride) 
     {
-        MGlobal::displayError("ColorPostProcessOverride pipeline is not active.");
+        MGlobal::displayError("PostFXRenderOverride pipeline is not active.");
         return MStatus::kFailure;
     }
 

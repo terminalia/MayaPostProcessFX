@@ -1,0 +1,160 @@
+// Uniform parameters mapped dynamically from your custom C++ commands
+uniform texture2D gInputTex;
+uniform texture2D gSourceMipTex; 
+uniform float gBloomIntensity = 1.5;
+uniform float gGlowTrail = 1.0;
+
+// OGSFX Sampler bindings
+uniform sampler2D gLinearSampler = sampler_state { Texture = <gInputTex>; };
+uniform sampler2D gSourceMipSampler = sampler_state { Texture = <gSourceMipTex>; };
+
+// --- OGSFX BOUNDARY LAYOUT DECLARATIONS ---
+attribute vs_input {
+    vec3 inPosition : POSITION;
+    vec2 inUV       : TEXCOORD0;
+};
+
+attribute vs_to_ps {
+    vec2 outUV : TEXCOORD0;
+};
+
+attribute ps_output {
+    vec4 fragColor : COLOR0;
+};
+
+// --- SHARED VERTEX SHADER ---
+GLSLShader VS_Main
+{
+    void main()
+    {
+        gl_Position = vec4(inPosition, 1.0);
+        outUV = inUV;
+    }
+}
+
+// --- PASS 1: THRESHOLD & DOWNSAMPLE SHADER BLOCK ---
+GLSLShader PS_ThresholdDownsample
+{
+    vec3 ExtractBrightHQ(vec3 color, float threshold, float softKnee)
+    {
+        float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+        float knee = threshold * softKnee;
+        float soft = luma - threshold + knee;
+        soft = clamp(soft, 0.0, 2.0 * knee);
+        soft = (soft * soft) / (4.0 * knee + 0.00001);
+        
+        float contribution = max(soft, luma - threshold);
+        contribution /= max(luma, 0.00001);
+        return color * contribution;
+    }
+
+    void main()
+    {
+        ivec2 texSize = textureSize(gLinearSampler, 0);
+        vec2 texelSize = vec2(1.0 / float(texSize.x), 1.0 / float(texSize.y));
+        vec2 d = texelSize * gGlowTrail;
+        
+        vec3 s1 = texture(gLinearSampler, outUV + vec2(-d.x, -d.y)).rgb;
+        vec3 s2 = texture(gLinearSampler, outUV + vec2( d.x, -d.y)).rgb;
+        vec3 s3 = texture(gLinearSampler, outUV + vec2(-d.x,  d.y)).rgb;
+        vec3 s4 = texture(gLinearSampler, outUV + vec2( d.x,  d.y)).rgb;
+        vec3 color = (s1 + s2 + s3 + s4) * 0.25;
+        
+        vec3 isolatedBright = ExtractBrightHQ(color, 0.22, 0.6);
+        fragColor = vec4(isolatedBright, 1.0);
+    }
+}
+
+// --- PASS 2: STANDARD DUAL-KAWASE DOWNSAMPLE SHADER BLOCK ---
+GLSLShader PS_StandardDownsample
+{
+    void main()
+    {
+        ivec2 texSize = textureSize(gLinearSampler, 0);
+        vec2 texelSize = vec2(1.0 / float(texSize.x), 1.0 / float(texSize.y));
+        vec2 d = texelSize * gGlowTrail;
+        
+        vec3 target = texture(gLinearSampler, outUV).rgb * 0.5;
+        target += texture(gLinearSampler, outUV + vec2(-d.x, -d.y)).rgb * 0.125;
+        target += texture(gLinearSampler, outUV + vec2( d.x, -d.y)).rgb * 0.125;
+        target += texture(gLinearSampler, outUV + vec2(-d.x,  d.y)).rgb * 0.125;
+        target += texture(gLinearSampler, outUV + vec2( d.x,  d.y)).rgb * 0.125;
+        
+        fragColor = vec4(target, 1.0);
+    }
+}
+
+// --- PASS 3: TENT FILTER UPSAMPLE SHADER BLOCK ---
+GLSLShader PS_UpsampleBlend
+{
+    void main()
+    {
+        ivec2 texSize = textureSize(gLinearSampler, 0);
+        vec2 texelSize = vec2(1.0 / float(texSize.x), 1.0 / float(texSize.y));
+        vec2 d = texelSize * gGlowTrail;
+        
+        vec3 upsampledGlow = texture(gLinearSampler, outUV).rgb * 4.0;
+        upsampledGlow += texture(gLinearSampler, outUV + vec2(-d.x, -d.y)).rgb;
+        upsampledGlow += texture(gLinearSampler, outUV + vec2( 0.0, -d.y)).rgb * 2.0;
+        upsampledGlow += texture(gLinearSampler, outUV + vec2( d.x, -d.y)).rgb;
+        upsampledGlow += texture(gLinearSampler, outUV + vec2(-d.x,  0.0)).rgb * 2.0;
+        upsampledGlow += texture(gLinearSampler, outUV + vec2( d.x,  0.0)).rgb * 2.0;
+        upsampledGlow += texture(gLinearSampler, outUV + vec2(-d.x,  d.y)).rgb;
+        upsampledGlow += texture(gLinearSampler, outUV + vec2( 0.0,  d.y)).rgb * 2.0;
+        upsampledGlow += texture(gLinearSampler, outUV + vec2( d.x,  d.y)).rgb;
+        upsampledGlow /= 16.0;
+        
+        vec3 higherResLayer = texture(gSourceMipSampler, outUV).rgb;
+        fragColor = vec4(higherResLayer + upsampledGlow, 1.0);
+    }
+}
+
+// --- PASS 4: SCENE COMPOSITE OVERLAY SHADER BLOCK ---
+GLSLShader PS_FinalComposite
+{
+    void main()
+    {
+        vec4 baseScene = texture(gSourceMipSampler, outUV);
+        vec3 fullGlowPyramid = texture(gLinearSampler, outUV).rgb;
+        
+        vec3 finalColor = baseScene.rgb + (fullGlowPyramid * gBloomIntensity);
+        fragColor = vec4(finalColor, baseScene.a);
+    }
+}
+
+// --- PIPELINE OVERLAY TECHNIQUE DEFINITIONS (FLAT REFERENCES) ---
+technique ThresholdDownsample
+{
+    pass p0
+    {
+        VertexShader (in vs_input, out vs_to_ps) = VS_Main;
+        PixelShader (in vs_to_ps, out ps_output) = PS_ThresholdDownsample;
+    }
+}
+
+technique StandardDownsample
+{
+    pass p0
+    {
+        VertexShader (in vs_input, out vs_to_ps) = VS_Main;
+        PixelShader (in vs_to_ps, out ps_output) = PS_StandardDownsample;
+    }
+}
+
+technique UpsampleBlend
+{
+    pass p0
+    {
+        VertexShader (in vs_input, out vs_to_ps) = VS_Main;
+        PixelShader (in vs_to_ps, out ps_output) = PS_UpsampleBlend;
+    }
+}
+
+technique FinalComposite
+{
+    pass p0
+    {
+        VertexShader (in vs_input, out vs_to_ps) = VS_Main;
+        PixelShader (in vs_to_ps, out ps_output) = PS_FinalComposite;
+    }
+}

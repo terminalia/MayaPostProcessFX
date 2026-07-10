@@ -1,25 +1,25 @@
 global proc onIntensityChanged() {
     float $val = `floatSliderGrp -q -v intensitySlider`;
-    postColor -intensity $val;
+    postFX -bloomIntensity $val;
 }
 
 global proc onTrailChanged() {
     float $val = `floatSliderGrp -q -v trailSlider`;
-    postColor -glowTrail $val;
+    postFX -glowRadius $val;
 }
 
 global proc onBloomToggled() {
     int $state = `checkBox -q -v bloomToggleCheck`;
-    postColor -bloom $state;
+    postFX -bloom $state;
 }
 
 global proc onReloadClicked() {
-    postColor -reload;
+    postFX -reload;
 }
 
 global proc createPostColorMELUI() {
-    string $windowName = "postColorMELUI";
-    
+    string $windowName = "postFX_MELUI";
+
     // Close the window if it's already open
     if (`window -exists $windowName`) {
         deleteUI -window $windowName;
@@ -31,10 +31,10 @@ global proc createPostColorMELUI() {
     int $initBloomState = 1;
     
     // Safely query initial states from your compiled C++ plugin layer
-    if (`exists postColor`) {
-        $initIntensity = `postColor -q -intensity`;
-        $initTrail = `postColor -q -glowTrail`;
-        $initBloomState = `postColor -q -bloom`;
+    if (`exists postFX`) {
+        $initIntensity = `postFX -q -bloomIntensity`;
+        $initTrail = `postFX -q -glowRadius`;
+        $initBloomState = `postFX -q -bloom`;
     }
 
     // Build the window layout
@@ -44,12 +44,11 @@ global proc createPostColorMELUI() {
     separator -height 10 -style "none";
     text -label "Adjust Viewport 2.0 Bloom Settings" -align "center" -font "boldLabelFont";
     separator -height 5 -style "in";
-
     checkBox -label "Enable Bloom Effect" 
              -v $initBloomState 
              -cc "onBloomToggled" 
              bloomToggleCheck;
-
+             
     floatSliderGrp -label "Glow Intensity " 
                    -field true 
                    -minValue 0.0 
@@ -59,7 +58,7 @@ global proc createPostColorMELUI() {
                    -dc "onIntensityChanged" 
                    -cc "onIntensityChanged" 
                    intensitySlider;
-
+                   
     floatSliderGrp -label "Glow Trail Radius " 
                    -field true 
                    -minValue 0.1 
@@ -69,7 +68,7 @@ global proc createPostColorMELUI() {
                    -dc "onTrailChanged" 
                    -cc "onTrailChanged" 
                    trailSlider;
-
+                   
     separator -height 5 -style "out";
     button -label "Reload & Refresh Shaders" -command "onReloadClicked";
     separator -height 10 -style "none";

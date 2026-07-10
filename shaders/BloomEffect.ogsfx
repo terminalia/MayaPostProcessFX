@@ -1,0 +1,123 @@
+// Uniform parameters mapped dynamically from your C++ code
+uniform texture2D gInputTex;
+uniform float gBloomIntensity = 1.5;
+uniform float gGlowTrail = 1.8;
+
+uniform sampler2D gLinearSampler = sampler_state
+{
+    Texture = <gInputTex>;
+};
+
+// --- OGSFX BOUNDARY DECLARATIONS ---
+attribute vs_input {
+    vec3 inPosition : POSITION;
+    vec2 inUV       : TEXCOORD0;
+};
+
+attribute vs_to_ps {
+    vec2 outUV : TEXCOORD0;
+};
+
+attribute ps_output {
+    vec4 fragColor : COLOR0;
+};
+
+// --- VERTEX SHADER CORE ---
+GLSLShader VS_Main
+{
+    void main()
+    {
+        gl_Position = vec4(inPosition, 1.0);
+        outUV = inUV;
+    }
+}
+
+// --- FRAGMENT SHADER CORE ---
+GLSLShader PS_Bloom
+{
+    // High-Quality Interleaved Gradient Noise function to randomize sample vectors per-pixel
+    float GetNoise(vec2 uv)
+    {
+        return fract(sin(dot(uv, vec2(12.9898, 78.233))) * 43758.5453);
+    }
+
+    vec3 ExtractBrightHQ(vec3 color, float threshold, float softKnee)
+    {
+        float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+        float knee = threshold * softKnee;
+        float soft = luma - threshold + knee;
+        soft = clamp(soft, 0.0, 2.0 * knee);
+        soft = (soft * soft) / (4.0 * knee + 0.00001);
+        
+        float contribution = max(soft, luma - threshold);
+        contribution /= max(luma, 0.00001);
+        return color * contribution;
+    }
+
+    void main()
+    {
+        vec4 baseColor = texture(gLinearSampler, outUV);
+        
+        float threshold = 0.22;
+        float softKnee = 0.7;
+
+        ivec2 texSize = textureSize(gLinearSampler, 0);
+        vec2 texelSize = vec2(1.0 / float(texSize.x), 1.0 / float(texSize.y));
+
+        // Generate a random rotation factor based on screen space coordinate
+        float noise = GetNoise(outUV) * 6.28318;
+        mat2 rotateMatrix = mat2(cos(noise), -sin(noise), sin(noise), cos(noise));
+
+        vec3 bloomAccumulator = vec3(0.0);
+        float totalWeight = 0.0;
+
+        // 13-tap strategic distribution matrix
+        vec2 sampleOffsets[13] = vec2[](
+            vec2( 0.0,  0.0),
+            vec2(-1.0, -1.0), vec2( 1.0, -1.0), vec2(-1.0,  1.0), vec2( 1.0,  1.0),
+            vec2( 0.0, -2.0), vec2( 0.0,  2.0), vec2(-2.0,  0.0), vec2( 2.0,  0.0),
+            vec2(-3.0, -3.0), vec2( 3.0, -3.0), vec2(-3.0,  3.0), vec2( 3.0,  3.0)
+        );
+
+        float sampleWeights[13] = float[](
+            0.18,
+            0.12, 0.12, 0.12, 0.12,
+            0.06, 0.06, 0.06, 0.06,
+            0.02, 0.02, 0.02, 0.02
+        );
+
+        for (int i = 0; i < 13; i++)
+        {
+            // Rotate the sample offset vector uniquely for this specific pixel
+            vec2 rotatedOffset = rotateMatrix * sampleOffsets[i];
+            
+            // Scaled outward by your C++ dynamic glow trail variable
+            vec2 offset = rotatedOffset * texelSize * gGlowTrail * 3.5;
+            vec3 sampleColor = texture(gLinearSampler, outUV + offset).rgb;
+            
+            vec3 brightColor = ExtractBrightHQ(sampleColor, threshold, softKnee);
+            
+            bloomAccumulator += brightColor * sampleWeights[i];
+            totalWeight += sampleWeights[i];
+        }
+
+        if (totalWeight > 0.0)
+        {
+            bloomAccumulator /= totalWeight;
+        }
+
+        // Composite additive final layer blend
+        vec3 finalColor = baseColor.rgb + (bloomAccumulator * gBloomIntensity);
+        fragColor = vec4(finalColor, baseColor.a);
+    }
+}
+
+// --- PIPELINE OVERLAY TECHNIQUE DEFINITION ---
+technique BloomTech
+{
+    pass p0
+    {
+        VertexShader (in vs_input, out vs_to_ps) = VS_Main;
+        PixelShader (in vs_to_ps, out ps_output) = PS_Bloom;
+    }
+}
