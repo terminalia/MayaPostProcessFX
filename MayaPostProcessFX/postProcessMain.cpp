@@ -68,22 +68,47 @@ MStatus initializePlugin(MObject obj)
 
 MStatus uninitializePlugin(MObject obj)
 {
-	MStatus status = MStatus::kSuccess;
-	MFnPlugin plugin(obj);
-	
-	MHWRender::MRenderer* renderer = MHWRender::MRenderer::theRenderer();
-	
-	if (renderer)
-	{
-		const MHWRender::MRenderOverride* overridePtr = renderer->findRenderOverride("PostFXRenderOverride");
-		if (overridePtr)
-		{
-			renderer->deregisterOverride(overridePtr);
-			delete overridePtr;
-		}
-		plugin.deregisterCommand(commandName.c_str());
-		MGlobal::displayInfo("[MistworkPostFX] Unloaded successfully.");
-	}
+    MStatus status = MStatus::kSuccess;
+    MFnPlugin plugin(obj);
 
-	return status;
+    MHWRender::MRenderer* renderer = MHWRender::MRenderer::theRenderer();
+
+    if (renderer)
+    {
+        // 1. Force EVERY single panel in Maya (hidden, floating, or Material Viewers) 
+        //    to completely drop the override reference.
+        MGlobal::executeCommand(
+            "string $allPanels[] = `getPanel -all`;"
+            "for ($panel in $allPanels) {"
+            "    if (`modelEditor -exists $panel`) {"
+            "        if (`modelEditor -q -rendererOverrideName $panel` == \"PostFXRenderOverride\") {"
+            "            modelEditor -e -rendererOverrideName \"\" $panel;"
+            "        }"
+            "    }"
+            "}"
+            "refresh -f;"
+        );
+
+        // 2. Safely find and unregister the override from the global registry
+        const MHWRender::MRenderOverride* baseOverridePtr = renderer->findRenderOverride("PostFXRenderOverride");
+        if (baseOverridePtr)
+        {
+            renderer->deregisterOverride(baseOverridePtr);
+
+            PostFXRenderOverride* ourOverridePtr = const_cast<PostFXRenderOverride*>(
+                dynamic_cast<const PostFXRenderOverride*>(baseOverridePtr)
+                );
+
+            if (ourOverridePtr)
+            {
+                delete ourOverridePtr;
+            }
+        }
+
+        // 3. Unregister the MEL UI command
+        plugin.deregisterCommand(commandName.c_str());
+        MGlobal::displayInfo("[MistworkPostFX] Unloaded completely and safely.");
+    }
+
+    return status;
 }

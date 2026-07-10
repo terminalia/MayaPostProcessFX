@@ -17,14 +17,14 @@ const MString PostFXRenderOverride::cFinalCompositePassName = "PostFXRenderOverr
 * Sets up the sequence of rendering operations (MHWRender::MRenderOperation) that Maya will execute sequentially every frame:
 */
 PostFXRenderOverride::PostFXRenderOverride(const MString& name)
-	: MRenderOverride(name)
+    : MRenderOverride(name)
     , UIName("MultiPass Bloom Effects")
     , sceneRenderOp(NULL), targetFullScene(NULL)
     , targetHalf(NULL), targetQuarter(NULL), targetEighth(NULL), targetQuarterBlur(NULL), targetHalfBlur(NULL)
 {
     MHWRender::MRenderer* theRenderer = MHWRender::MRenderer::theRenderer();
-    
-    if (!theRenderer) 
+
+    if (!theRenderer)
         return;
 
     //Preserves the standard 3D Scene to let Maya perform its native scene geometry, material, lighting, and shadow passes normally.
@@ -38,8 +38,7 @@ PostFXRenderOverride::PostFXRenderOverride(const MString& name)
 
     /*###########################################################################################################
     * INJECTING POST PROCESSING QUADS
-    * 
-    * Allocates a series of PostQuadRenderer full-screen passes and appends them right after the native scene is drawn.
+    * * Allocates a series of PostQuadRenderer full-screen passes and appends them right after the native scene is drawn.
     * Each PostQuadRenderer pass is said to be a RenderOperation
     */
 
@@ -83,8 +82,9 @@ PostFXRenderOverride::~PostFXRenderOverride()
 {
     releaseTargets();
 
-    for (auto op : renderOperations) 
-        delete op;
+    // FIXED FOR MAYA 2026: Do NOT manually delete the operations here.
+    // mOperations has full ownership and handles the destruction automatically.
+    renderOperations.clear();
 }
 
 MHWRender::DrawAPI PostFXRenderOverride::supportedDrawAPIs() const
@@ -99,12 +99,12 @@ MStatus PostFXRenderOverride::setup(const MString& destination)
 {
     MHWRender::MRenderer* renderer = MHWRender::MRenderer::theRenderer();
 
-    if (!renderer) 
+    if (!renderer)
         return MStatus::kFailure;
-    
+
     const MHWRender::MRenderTargetManager* targetMgr = renderer->getRenderTargetManager();
-    
-    if (!targetMgr) 
+
+    if (!targetMgr)
         return MStatus::kFailure;
 
     //Viewport Responsiveness: It queries Maya for the active viewport dimensions via renderer->outputTargetSize(w, h); 
@@ -119,8 +119,8 @@ MStatus PostFXRenderOverride::setup(const MString& destination)
     /*###########################################################################################################
     * ALLOCATING OFFSCREEN TEXTURE BUFFERS (RENDER TARGETS)
     *
-    * Instead of processing the bloom at full screen resolution (which is slow and makes wide blurs difficult), 
-    * this code sets up a series of progressively smaller textures to efficiently downsample, blur, and 
+    * Instead of processing the bloom at full screen resolution (which is slow and makes wide blurs difficult),
+    * this code sets up a series of progressively smaller textures to efficiently downsample, blur, and
     * upsample the bright areas of your scene.
     */
 
@@ -140,35 +140,35 @@ MStatus PostFXRenderOverride::setup(const MString& destination)
     targetHalf = targetMgr->acquireRenderTarget(targetDescriptor);
 
     //Quarter Resolution (1/4): Modifies the name and drops the size to a quarter of the screen. This target catches the next stage of downsampling.
-    targetDescriptor.setName("_bloom_quarter"); 
-    targetDescriptor.setWidth(w / 4); 
+    targetDescriptor.setName("_bloom_quarter");
+    targetDescriptor.setWidth(w / 4);
     targetDescriptor.setHeight(h / 4);
     targetQuarter = targetMgr->acquireRenderTarget(targetDescriptor);
 
     //Eighth Resolution (1/8): Drops the size down to an eighth of the screen. By the time your image is shrunk to 1/8th resolution, a tiny 3x3 pixel blur shader 
     //covers a massive visual area relative to the original scene, allowing for a huge, soft glow trail without killing frame rates.
-    targetDescriptor.setName("_bloom_eighth"); 
-    targetDescriptor.setWidth(w / 8); 
+    targetDescriptor.setName("_bloom_eighth");
+    targetDescriptor.setWidth(w / 8);
     targetDescriptor.setHeight(h / 8);
     targetEighth = targetMgr->acquireRenderTarget(targetDescriptor);
 
     //UP SAMPLING PHASE
     //These copy the dimensions of your previous pyramid levels. They serve as the destination containers for your upsampling passes, blending the super-blurry 
     //small layers back into the sharper large layers before your FinalComposite pass merges them onto the screen.
-    targetDescriptor.setName("_bloom_quarter_blur"); 
-    targetDescriptor.setWidth(w / 4); 
+    targetDescriptor.setName("_bloom_quarter_blur");
+    targetDescriptor.setWidth(w / 4);
     targetDescriptor.setHeight(h / 4);
     targetQuarterBlur = targetMgr->acquireRenderTarget(targetDescriptor);
 
-    targetDescriptor.setName("_bloom_half_blur"); 
-    targetDescriptor.setWidth(w / 2); 
+    targetDescriptor.setName("_bloom_half_blur");
+    targetDescriptor.setWidth(w / 2);
     targetDescriptor.setHeight(h / 2);
     targetHalfBlur = targetMgr->acquireRenderTarget(targetDescriptor);
 
     /*###########################################################################################################
     * SETUP THE ROUTING LOGIC (NODE CONNECTIONS) BETWEEN THE VARIOUS RENDER PASSES FOR MULTI-PASS BLOOM PYRAMID
     *
-    * By passing texture pointers from one pass into the next, you are chaining a series of full-screen quad rendering operations together. 
+    * By passing texture pointers from one pass into the next, you are chaining a series of full-screen quad rendering operations together.
     * This configuration explicitly dictates how data flows step-by-step through the downsampling, blurring, upsampling, and final compositing phases.
     */
 
@@ -232,14 +232,14 @@ MHWRender::MRenderTarget* PostFXRenderOverride::getTargetHalfBlur() const
 }
 
 /*
-* Its primary purpose is to enable live shader hot-reloading within Maya's viewport without forcing the developer to restart 
+* Its primary purpose is to enable live shader hot-reloading within Maya's viewport without forcing the developer to restart
 * Maya every time they modify a shader file (.fx or .ogsfx) on disk.
 */
 void PostFXRenderOverride::triggerShaderReload()
 {
     MHWRender::MRenderer* renderer = MHWRender::MRenderer::theRenderer();
-    
-    if (!renderer) 
+
+    if (!renderer)
         return;
 
     MString originalPath = Utils::getPluginDirectory() + "/shaders/MultiPassBloom";
@@ -278,42 +278,42 @@ void PostFXRenderOverride::triggerShaderReload()
 void PostFXRenderOverride::releaseTargets()
 {
     MHWRender::MRenderer* renderer = MHWRender::MRenderer::theRenderer();
-    
-    if (!renderer) 
+
+    if (!renderer)
         return;
-    
+
     const MHWRender::MRenderTargetManager* targetMgr = renderer->getRenderTargetManager();
-    
-    if (!targetMgr) 
+
+    if (!targetMgr)
         return;
 
-    if (targetHalf) 
-    { 
-        targetMgr->releaseRenderTarget(targetHalf); 
-        targetHalf = NULL; 
-    }
-    
-    if (targetQuarter) 
-    { 
-        targetMgr->releaseRenderTarget(targetQuarter); 
-        targetQuarter = NULL; 
+    if (targetHalf)
+    {
+        targetMgr->releaseRenderTarget(targetHalf);
+        targetHalf = NULL;
     }
 
-    if (targetEighth) 
-    { 
-        targetMgr->releaseRenderTarget(targetEighth); 
-        targetEighth = NULL; 
-    }
-    
-    if (targetQuarterBlur) 
-    { 
-        targetMgr->releaseRenderTarget(targetQuarterBlur); 
-        targetQuarterBlur = NULL; 
+    if (targetQuarter)
+    {
+        targetMgr->releaseRenderTarget(targetQuarter);
+        targetQuarter = NULL;
     }
 
-    if (targetHalfBlur) 
-    { 
-        targetMgr->releaseRenderTarget(targetHalfBlur); 
-        targetHalfBlur = NULL; 
+    if (targetEighth)
+    {
+        targetMgr->releaseRenderTarget(targetEighth);
+        targetEighth = NULL;
+    }
+
+    if (targetQuarterBlur)
+    {
+        targetMgr->releaseRenderTarget(targetQuarterBlur);
+        targetQuarterBlur = NULL;
+    }
+
+    if (targetHalfBlur)
+    {
+        targetMgr->releaseRenderTarget(targetHalfBlur);
+        targetHalfBlur = NULL;
     }
 }
