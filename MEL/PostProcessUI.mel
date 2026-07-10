@@ -8,6 +8,18 @@ global proc onTrailChanged() {
     postFX -glowRadius $val;
 }
 
+// ?? Callback for Threshold adjustments
+global proc onThresholdChanged() {
+    float $val = `floatSliderGrp -q -v thresholdSlider`;
+    postFX -threshold $val;
+}
+
+// ?? Callback for Soft Knee adjustments
+global proc onSoftKneeChanged() {
+    float $val = `floatSliderGrp -q -v softKneeSlider`;
+    postFX -softKnee $val;
+}
+
 global proc onBloomToggled() {
     int $state = `checkBox -q -v bloomToggleCheck`;
     postFX -bloom $state;
@@ -20,30 +32,35 @@ global proc onReloadClicked() {
 global proc createPostColorMELUI() {
     string $windowName = "postFX_MELUI";
 
-    // Close the window if it's already open
+    // Close the window if it's already open to avoid layout duplication
     if (`window -exists $windowName`) {
         deleteUI -window $windowName;
     }
     
-    // Default initial slider settings
+    // Default initial slider fallbacks
     float $initIntensity = 1.5;
     float $initTrail = 1.8;
+    float $initThreshold = 0.22;
+    float $initSoftKnee = 0.6;
     int $initBloomState = 1;
     
-    // Safely query initial states from your compiled C++ plugin layer
+    // Query initial states from the compiled C++ plugin layer
     if (`exists postFX`) {
         $initIntensity = `postFX -q -bloomIntensity`;
         $initTrail = `postFX -q -glowRadius`;
+        $initThreshold = `postFX -q -threshold`;
+        $initSoftKnee = `postFX -q -softKnee`;
         $initBloomState = `postFX -q -bloom`;
     }
 
-    // Build the window layout
-    window -title "Bloom Controller" -widthHeight 400 160 -sizeable false $windowName;
-    columnLayout -adjustableColumn true -rowSpacing 10 -columnOffset "both" 10;
+    // Window height adjusted to 220 to hold the two additional sliders cleanly
+    window -title "Bloom Controller" -widthHeight 400 220 -sizeable true $windowName;
+    columnLayout -adjustableColumn true -rowSpacing 8 -columnOffset "both" 10;
     
     separator -height 10 -style "none";
     text -label "Adjust Viewport 2.0 Bloom Settings" -align "center" -font "boldLabelFont";
     separator -height 5 -style "in";
+    
     checkBox -label "Enable Bloom Effect" 
              -v $initBloomState 
              -cc "onBloomToggled" 
@@ -58,17 +75,37 @@ global proc createPostColorMELUI() {
                    -dc "onIntensityChanged" 
                    -cc "onIntensityChanged" 
                    intensitySlider;
-                   
+
     floatSliderGrp -label "Glow Trail Radius " 
                    -field true 
                    -minValue 0.1 
-                   -maxValue 15.0 
+                   -maxValue 30.0 
                    -v $initTrail 
                    -step 0.1
                    -dc "onTrailChanged" 
                    -cc "onTrailChanged" 
                    trailSlider;
-                   
+    
+    floatSliderGrp -label "Bloom Threshold " 
+                   -field true 
+                   -minValue 0.0 
+                   -maxValue 2.0 
+                   -v $initThreshold 
+                   -step 0.01
+                   -dc "onThresholdChanged" 
+                   -cc "onThresholdChanged" 
+                   thresholdSlider;
+    
+    floatSliderGrp -label "Bloom Soft Knee " 
+                   -field true 
+                   -minValue 0.0 
+                   -maxValue 1.0 
+                   -v $initSoftKnee 
+                   -step 0.01
+                   -dc "onSoftKneeChanged" 
+                   -cc "onSoftKneeChanged" 
+                   softKneeSlider;
+
     separator -height 5 -style "out";
     button -label "Reload & Refresh Shaders" -command "onReloadClicked";
     separator -height 10 -style "none";
